@@ -1,0 +1,29 @@
+{:paths ["src" "resources"]
+
+ :deps {org.clojure/clojure {:mvn/version "1.11.1"}
+
+        ;; Web server - Ring is the foundation for HTTP in Clojure
+        ring/ring-core {:mvn/version "1.10.0"}
+        ring/ring-jetty-adapter {:mvn/version "1.10.0"}
+        ring/ring-defaults {:mvn/version "0.4.0"}
+
+        ;; Routing - Compojure makes defining routes easy
+        compojure/compojure {:mvn/version "1.7.0"}
+
+        ;; JSON handling
+        cheshire/cheshire {:mvn/version "5.11.0"}
+
+        ;; Document conversion - Apache POI and JODConverter
+        org.apache.poi/poi {:mvn/version "5.2.3"}
+        org.apache.poi/poi-ooxml {:mvn/version "5.2.3"}
+        org.jodconverter/jodconverter-core {:mvn/version "4.4.6"}
+        org.jodconverter/jodconverter-local {:mvn/version "4.4.6"}
+
+        ;; LibreOffice integration for conversion
+        org.libreoffice/juh {:mvn/version "7.4.2"}
+        org.libreoffice/jurt {:mvn/version "7.4.2"}
+        org.libreoffice/ridl {:mvn/version "7.4.2"}
+        org.libreoffice/unoil {:mvn/version "7.4.2"}
+
+        ;; PDF manipulation - for merging multiple PDFs
+        org.apache.pdfbox/pdfbox {:mvn/version "2.0.29"}}}

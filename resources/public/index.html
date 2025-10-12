@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Document to PDF Converter</title>
+        <style>
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+
+            body {
+                font-family:
+                    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                    Oxygen, Ubuntu, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                padding: 20px;
+            }
+
+            .container {
+                background: white;
+                padding: 40px;
+                border-radius: 10px;
+                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+                max-width: 500px;
+                width: 100%;
+            }
+
+            h1 {
+                color: #333;
+                margin-bottom: 10px;
+                font-size: 28px;
+            }
+
+            .subtitle {
+                color: #666;
+                margin-bottom: 30px;
+                font-size: 14px;
+            }
+
+            .upload-area {
+                border: 2px dashed #667eea;
+                border-radius: 8px;
+                padding: 40px;
+                text-align: center;
+                cursor: pointer;
+                transition: all 0.3s;
+                margin-bottom: 20px;
+            }
+
+            .upload-area:hover {
+                border-color: #764ba2;
+                background: #f8f9ff;
+            }
+
+            .upload-area.dragover {
+                border-color: #764ba2;
+                background: #f0f2ff;
+                border-style: solid;
+            }
+
+            .upload-icon {
+                font-size: 48px;
+                margin-bottom: 10px;
+            }
+
+            input[type="file"] {
+                display: none;
+            }
+
+            button {
+                width: 100%;
+                padding: 15px;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-size: 16px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: transform 0.2s;
+            }
+
+            button:hover {
+                transform: translateY(-2px);
+            }
+
+            button:disabled {
+                opacity: 0.6;
+                cursor: not-allowed;
+                transform: none;
+            }
+
+            .file-info {
+                margin-top: 15px;
+                padding: 15px;
+                background: #f8f9ff;
+                border-radius: 8px;
+                color: #333;
+                display: none;
+            }
+
+            .file-info.show {
+                display: block;
+            }
+
+            .status {
+                margin-top: 20px;
+                padding: 15px;
+                border-radius: 8px;
+                display: none;
+                font-weight: 500;
+            }
+
+            .status.show {
+                display: block;
+            }
+
+            .status.error {
+                background: #fee;
+                color: #c33;
+            }
+
+            .status.success {
+                background: #efe;
+                color: #3a3;
+            }
+
+            .status.processing {
+                background: #ffa;
+                color: #880;
+            }
+
+            .spinner {
+                border: 3px solid #f3f3f3;
+                border-top: 3px solid #667eea;
+                border-radius: 50%;
+                width: 20px;
+                height: 20px;
+                animation: spin 1s linear infinite;
+                display: inline-block;
+                margin-right: 10px;
+            }
+
+            @keyframes spin {
+                0% {
+                    transform: rotate(0deg);
+                }
+                100% {
+                    transform: rotate(360deg);
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>📄 Document to PDF Converter</h1>
+            <p class="subtitle">
+                Upload your .doc or .docx files and convert them to PDF
+            </p>
+
+            <form id="uploadForm" enctype="multipart/form-data">
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-icon">📤</div>
+                    <p><strong>Click to upload</strong> or drag and drop</p>
+                    <p style="font-size: 12px; color: #999; margin-top: 5px">
+                        Supported: .doc, .docx
+                    </p>
+                    <input
+                        type="file"
+                        id="fileInput"
+                        name="file"
+                        accept=".doc,.docx"
+                        multiple
+                        required
+                    />
+                </div>
+
+                <div class="file-info" id="fileInfo"></div>
+
+                <button type="submit" id="submitBtn">Convert to PDF</button>
+            </form>
+
+            <div class="status" id="status"></div>
+        </div>
+
+        <script>
+            const uploadArea = document.getElementById("uploadArea");
+            const fileInput = document.getElementById("fileInput");
+            const fileInfo = document.getElementById("fileInfo");
+            const form = document.getElementById("uploadForm");
+            const status = document.getElementById("status");
+            const submitBtn = document.getElementById("submitBtn");
+
+            // Click to upload
+            uploadArea.addEventListener("click", () => fileInput.click());
+
+            // File selection handler
+            fileInput.addEventListener("change", (e) => {
+                if (e.target.files.length > 0) {
+                    showFileInfo(e.target.files);
+                }
+            });
+
+            // Drag and drop handlers
+            uploadArea.addEventListener("dragover", (e) => {
+                e.preventDefault();
+                uploadArea.classList.add("dragover");
+            });
+
+            uploadArea.addEventListener("dragleave", () => {
+                uploadArea.classList.remove("dragover");
+            });
+
+            uploadArea.addEventListener("drop", (e) => {
+                e.preventDefault();
+                uploadArea.classList.remove("dragover");
+
+                if (e.dataTransfer.files.length > 0) {
+                    fileInput.files = e.dataTransfer.files;
+                    showFileInfo(e.dataTransfer.files);
+                }
+            });
+
+            // Show file information
+            function showFileInfo(files) {
+                const fileCount = files.length;
+                const totalSize = Array.from(files).reduce(
+                    (sum, file) => sum + file.size,
+                    0,
+                );
+
+                let fileList = Array.from(files)
+                    .map(
+                        (file) =>
+                            `${file.name} (${(file.size / 1024).toFixed(2)} KB)`,
+                    )
+                    .join("<br>");
+
+                fileInfo.innerHTML = `
+                <strong>Selected ${fileCount} file${fileCount > 1 ? "s" : ""}:</strong><br>
+                ${fileList}<br>
+                <strong>Total size:</strong> ${(totalSize / 1024).toFixed(2)} KB
+            `;
+                fileInfo.classList.add("show");
+            }
+
+            // Show status message
+            function showStatus(message, type) {
+                status.textContent = message;
+                status.className = "status show " + type;
+            }
+
+            // Form submission handler
+            form.addEventListener("submit", async (e) => {
+                e.preventDefault();
+
+                const files = fileInput.files;
+                if (!files || files.length === 0) {
+                    showStatus("Please select at least one file", "error");
+                    return;
+                }
+
+                const formData = new FormData();
+                // Append all files with the same parameter name
+                Array.from(files).forEach((file) => {
+                    formData.append("file", file);
+                });
+
+                // Disable button and show processing status
+                submitBtn.disabled = true;
+                const fileCountText =
+                    files.length > 1 ? `${files.length} documents` : "document";
+                showStatus(
+                    `Converting ${fileCountText}... Please wait`,
+                    "processing",
+                );
+                status.innerHTML = `<span class="spinner"></span>Converting ${fileCountText}... Please wait`;
+
+                try {
+                    const response = await fetch("/upload", {
+                        method: "POST",
+                        body: formData,
+                    });
+
+                    if (response.ok) {
+                        // Download the file (PDF or ZIP)
+                        const blob = await response.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+
+                        // Determine filename and success message based on content type
+                        const contentType =
+                            response.headers.get("Content-Type");
+                        let downloadName;
+                        let successMessage;
+
+                        if (contentType === "application/zip") {
+                            downloadName = "converted-documents.zip";
+                            successMessage = `✓ Conversion successful! ${files.length} PDFs are downloading as a ZIP file...`;
+                        } else {
+                            downloadName = files[0].name.replace(
+                                /\.(doc|docx)$/i,
+                                ".pdf",
+                            );
+                            successMessage =
+                                "✓ Conversion successful! Your PDF is downloading...";
+                        }
+
+                        a.download = downloadName;
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+
+                        showStatus(successMessage, "success");
+
+                        // Reset form
+                        setTimeout(() => {
+                            form.reset();
+                            fileInfo.classList.remove("show");
+                            status.classList.remove("show");
+                        }, 3000);
+                    } else {
+                        const errorText = await response.text();
+                        showStatus("✗ Error: " + errorText, "error");
+                    }
+                } catch (error) {
+                    showStatus("✗ Network error: " + error.message, "error");
+                } finally {
+                    submitBtn.disabled = false;
+                }
+            });
+        </script>
+    </body>
+</html>
