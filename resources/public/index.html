@@ -162,7 +162,8 @@
         <div class="container">
             <h1>📄 Document to PDF Converter</h1>
             <p class="subtitle">
-                Upload your .doc or .docx files and convert them to PDF
+                Upload your documents (.doc, .docx) or images (.jpg, .png, .gif,
+                .bmp) and convert them to PDF
             </p>
 
             <form id="uploadForm" enctype="multipart/form-data">
@@ -170,13 +171,13 @@
                     <div class="upload-icon">📤</div>
                     <p><strong>Click to upload</strong> or drag and drop</p>
                     <p style="font-size: 12px; color: #999; margin-top: 5px">
-                        Supported: .doc, .docx
+                        Supported: .doc, .docx, .jpg, .jpeg, .png, .gif, .bmp
                     </p>
                     <input
                         type="file"
                         id="fileInput"
                         name="file"
-                        accept=".doc,.docx"
+                        accept=".doc,.docx,.jpg,.jpeg,.png,.gif,.bmp,image/*"
                         multiple
                         required
                     />
@@ -306,8 +307,9 @@
                             downloadName = "converted-documents.zip";
                             successMessage = `✓ Conversion successful! ${files.length} PDFs are downloading as a ZIP file...`;
                         } else {
+                            // Replace document and image extensions with .pdf
                             downloadName = files[0].name.replace(
-                                /\.(doc|docx)$/i,
+                                /\.(doc|docx|jpg|jpeg|png|gif|bmp)$/i,
                                 ".pdf",
                             );
                             successMessage =

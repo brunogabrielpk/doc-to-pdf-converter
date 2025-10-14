@@ -2,7 +2,8 @@
   "Main entry point for the document converter application"
   (:require [ring.adapter.jetty :refer [run-jetty]]
             [doc-converter.handler :refer [app]]
-            [doc-converter.converter :as converter])
+            [doc-converter.converter :as converter]
+            [doc-converter.db :as db])
   (:gen-class))
 
 (defn -main
@@ -12,6 +13,9 @@
    the application as a standalone program."
   [& args]
   (let [port (Integer/parseInt (or (System/getenv "PORT") "3000"))]
+
+    ;; Initialize the database
+    (db/init-db!)
 
     ;; Start the document converter service
     (converter/start-office-manager!)

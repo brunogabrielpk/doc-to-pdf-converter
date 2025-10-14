@@ -6,8 +6,10 @@
             [ring.middleware.multipart-params :refer [wrap-multipart-params]]
             [ring.util.response :as response]
             [doc-converter.converter :as converter]
+            [doc-converter.db :as db]
             [clojure.java.io :as io]
-            [clojure.string :as str])
+            [clojure.string :as str]
+            [cheshire.core :as json])
   (:import [java.util UUID]
            [java.util.zip ZipOutputStream ZipEntry]
            [java.io ByteArrayOutputStream]))
@@ -86,7 +88,7 @@
 
       ;; Check if any file has invalid type
       (some #(not (converter/valid-input-file? (:filename %))) file-params-vec)
-      (-> (response/response "Invalid file type. Please upload .doc or .docx files only")
+      (-> (response/response "Invalid file type. Please upload .doc, .docx, or image files (.jpg, .jpeg, .png, .gif, .bmp) only")
           (response/status 400))
 
       ;; Valid files - process them
@@ -103,18 +105,36 @@
           (doseq [file-param file-params-vec]
             (let [temp-file (:tempfile file-param)
                   original-filename (:filename file-param)
-                  input-filename (generate-filename original-filename
-                                                    (if (.endsWith original-filename ".docx")
-                                                      ".docx"
-                                                      ".doc"))
+                  ;; Preserve the original file extension
+                  file-extension (re-find #"\.[^.]+$" original-filename)
+                  input-filename (generate-filename original-filename (or file-extension ".doc"))
                   output-filename (generate-filename original-filename ".pdf")
                   input-path (.getAbsolutePath (io/file uploads-dir input-filename))
                   output-path (.getAbsolutePath (io/file uploads-dir output-filename))
-                  ;; Generate output filename based on original name
-                  pdf-name (str/replace original-filename #"\.(doc|docx)$" ".pdf")]
+                  ;; Generate output filename based on original name (case-insensitive)
+                  pdf-name (clojure.string/replace original-filename
+                                                   #"(?i)\.(doc|docx|jpg|jpeg|png|gif|bmp)$"
+                                                   ".pdf")]
+
+              (println (format "Processing file: '%s' -> '%s'" original-filename pdf-name))
+              (println (format "Extension match result: %s" (re-find #"(?i)\.(doc|docx|jpg|jpeg|png|gif|bmp)$" original-filename)))
+              (println (format "Temp file: %s, exists: %s, size: %d" temp-file (.exists temp-file) (.length temp-file)))
+
+              ;; Check temp file header
+              (let [header (with-open [in (io/input-stream temp-file)]
+                             (let [buf (byte-array 8)]
+                               (.read in buf)
+                               buf))]
+                (println (format "Temp file header: %s"
+                                 (clojure.string/join " " (map #(format "%02X" %) header)))))
+
+              (println (format "Input path: %s" input-path))
+              (println (format "Output path: %s" output-path))
 
               ;; Save uploaded file
-              (io/copy temp-file (io/file input-path))
+              (with-open [in (io/input-stream temp-file)
+                          out (io/output-stream (io/file input-path))]
+                (io/copy in out))
               (println (format "Saved uploaded file to: %s" input-path))
               (swap! input-paths conj input-path)
 
@@ -122,18 +142,26 @@
               (if (converter/convert-to-pdf input-path output-path)
                 (do
                   (swap! pdf-paths conj output-path)
-                  (swap! pdf-info conj {:path output-path :name pdf-name}))
+                  (swap! pdf-info conj {:path output-path :name pdf-name})
+
+                  ;; Record conversion in database
+                  (let [file-extension (re-find #"\.[^.]+$" original-filename)
+                        file-size (.length temp-file)]
+                    (db/add-conversion! original-filename file-extension file-size)))
                 (throw (Exception. (format "Failed to convert %s" original-filename))))))
 
           ;; Return response based on number of files
           (if (= 1 (count @pdf-info))
             ;; Single file - return PDF directly
             (let [{:keys [path name]} (first @pdf-info)
-                  pdf-bytes (with-open [in (io/input-stream (io/file path))
+                  pdf-file (io/file path)
+                  _ (println (format "PDF file exists: %s, size: %d" (.exists pdf-file) (.length pdf-file)))
+                  pdf-bytes (with-open [in (io/input-stream pdf-file)
                                         out (ByteArrayOutputStream.)]
                               (io/copy in out)
                               (.toByteArray out))]
               (println (format "Sending single PDF: %s (%d bytes)" name (count pdf-bytes)))
+              (println (format "Content-Type: application/pdf, Filename: %s" name))
               (-> (response/response (java.io.ByteArrayInputStream. pdf-bytes))
                   (response/content-type "application/pdf")
                   (response/header "Content-Disposition"
@@ -162,9 +190,17 @@
                 (catch Exception e
                   (println "Error deleting file" path ":" (.getMessage e)))))))))))
 
+(defn get-history
+  "Returns the last 5 conversions as JSON"
+  []
+  (let [conversions (db/get-recent-conversions)]
+    (-> (response/response (json/generate-string conversions))
+        (response/content-type "application/json"))))
+
 (defroutes app-routes
   "Defines the URL routes for the application"
   (GET "/" [] (home-page))
+  (GET "/history" [] (get-history))
   (POST "/upload" request (handle-upload request))
   (route/resources "/")  ; Serve static resources
   (route/not-found "Not Found"))
