@@ -156,6 +156,78 @@
                     transform: rotate(360deg);
                 }
             }
+
+            .history-section {
+                margin-top: 30px;
+                padding-top: 30px;
+                border-top: 2px solid #eee;
+            }
+
+            .history-title {
+                color: #333;
+                margin-bottom: 15px;
+                font-size: 20px;
+            }
+
+            .history-list {
+                list-style: none;
+            }
+
+            .history-item {
+                background: #f8f9ff;
+                padding: 12px 15px;
+                margin-bottom: 10px;
+                border-radius: 8px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                transition: all 0.3s;
+            }
+
+            .history-item:hover {
+                background: #f0f2ff;
+                transform: translateX(2px);
+            }
+
+            .history-info {
+                flex: 1;
+            }
+
+            .history-filename {
+                font-weight: 600;
+                color: #333;
+                margin-bottom: 3px;
+            }
+
+            .history-meta {
+                font-size: 12px;
+                color: #666;
+            }
+
+            .download-btn {
+                padding: 8px 16px;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-size: 14px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: transform 0.2s;
+                text-decoration: none;
+                display: inline-block;
+            }
+
+            .download-btn:hover {
+                transform: translateY(-2px);
+            }
+
+            .no-history {
+                color: #999;
+                text-align: center;
+                padding: 20px;
+                font-style: italic;
+            }
         </style>
     </head>
     <body>
@@ -189,6 +261,13 @@
             </form>
 
             <div class="status" id="status"></div>
+
+            <div class="history-section">
+                <h2 class="history-title">📚 Recent Conversions</h2>
+                <ul class="history-list" id="historyList">
+                    <li class="no-history">No recent conversions</li>
+                </ul>
+            </div>
         </div>
 
         <script>
@@ -339,6 +418,69 @@
                 } finally {
                     submitBtn.disabled = false;
                 }
+            });
+
+            // Load and display conversion history
+            async function loadHistory() {
+                try {
+                    const response = await fetch("/history");
+                    if (response.ok) {
+                        const conversions = await response.json();
+                        displayHistory(conversions);
+                    }
+                } catch (error) {
+                    console.error("Error loading history:", error);
+                }
+            }
+
+            // Display history list
+            function displayHistory(conversions) {
+                const historyList = document.getElementById("historyList");
+
+                if (!conversions || conversions.length === 0) {
+                    historyList.innerHTML =
+                        '<li class="no-history">No recent conversions</li>';
+                    return;
+                }
+
+                historyList.innerHTML = conversions
+                    .map((conv) => {
+                        const date = new Date(
+                            conv.conversions_converted_at ||
+                                conv["conversions/converted_at"],
+                        );
+                        const dateStr = date.toLocaleString();
+                        const filename =
+                            conv.conversions_filename ||
+                            conv["conversions/filename"];
+                        const id = conv.conversions_id || conv["conversions/id"];
+                        const size =
+                            conv.conversions_file_size ||
+                            conv["conversions/file_size"];
+                        const sizeKB = (size / 1024).toFixed(2);
+
+                        return `
+                        <li class="history-item">
+                            <div class="history-info">
+                                <div class="history-filename">${filename}</div>
+                                <div class="history-meta">${dateStr} • ${sizeKB} KB</div>
+                            </div>
+                            <a href="/download/${id}" class="download-btn">⬇ Download</a>
+                        </li>
+                    `;
+                    })
+                    .join("");
+            }
+
+            // Load history on page load
+            loadHistory();
+
+            // Refresh history after successful conversion
+            const originalFormSubmit = form.onsubmit;
+            form.addEventListener("submit", async (e) => {
+                // Wait for the existing submit handler to complete
+                await new Promise((resolve) => setTimeout(resolve, 3500));
+                loadHistory();
             });
         </script>
     </body>

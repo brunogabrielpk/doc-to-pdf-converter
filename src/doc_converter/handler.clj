@@ -94,11 +94,16 @@
       ;; Valid files - process them
       :else
       (let [uploads-dir (io/file "uploads")
+            ;; Create persistent storage for PDFs
+            storage-dir (io/file "pdf-storage")
+            _ (when-not (.exists storage-dir) (.mkdirs storage-dir))
             ;; Track all paths for cleanup
             input-paths (atom [])
             pdf-paths (atom [])
             ;; Track PDF info (path and original filename) for ZIP creation
-            pdf-info (atom [])]
+            pdf-info (atom [])
+            ;; Track stored PDFs for database
+            stored-pdfs (atom [])]
 
         (try
           ;; Process each file: save and convert to PDF
@@ -144,11 +149,19 @@
                   (swap! pdf-paths conj output-path)
                   (swap! pdf-info conj {:path output-path :name pdf-name})
 
-                  ;; Record conversion in database
-                  (let [file-extension (re-find #"\.[^.]+$" original-filename)
-                        file-size (.length temp-file)]
-                    (db/add-conversion! original-filename file-extension file-size)))
+                  ;; Save PDF to persistent storage
+                  (let [stored-filename (str (java.util.UUID/randomUUID) ".pdf")
+                        stored-path (.getAbsolutePath (io/file storage-dir stored-filename))]
+                    (io/copy (io/file output-path) (io/file stored-path))
+                    (swap! stored-pdfs conj {:filename original-filename
+                                              :path stored-path
+                                              :extension (re-find #"\.[^.]+$" original-filename)
+                                              :size (.length temp-file)})))
                 (throw (Exception. (format "Failed to convert %s" original-filename))))))
+
+          ;; Record all conversions in database
+          (doseq [{:keys [filename path extension size]} @stored-pdfs]
+            (db/add-conversion! filename extension size path))
 
           ;; Return response based on number of files
           (if (= 1 (count @pdf-info))
@@ -197,10 +210,31 @@
     (-> (response/response (json/generate-string conversions))
         (response/content-type "application/json"))))
 
+(defn download-pdf
+  "Downloads a stored PDF by conversion ID"
+  [id]
+  (if-let [conversion (db/get-conversion-by-id (Integer/parseInt id))]
+    (let [pdf-path (:conversions/pdf_path conversion)
+          filename (:conversions/filename conversion)]
+      (if (and pdf-path (.exists (io/file pdf-path)))
+        (let [pdf-file (io/file pdf-path)
+              ;; Generate PDF filename from original filename
+              pdf-name (str/replace filename #"(?i)\.(doc|docx|jpg|jpeg|png|gif|bmp)$" ".pdf")]
+          (println (format "Serving stored PDF: %s (ID: %s)" pdf-name id))
+          (-> (response/response pdf-file)
+              (response/content-type "application/pdf")
+              (response/header "Content-Disposition"
+                               (format "attachment; filename=\"%s\"" pdf-name))))
+        (-> (response/response "PDF file not found")
+            (response/status 404))))
+    (-> (response/response "Conversion not found")
+        (response/status 404))))
+
 (defroutes app-routes
   "Defines the URL routes for the application"
   (GET "/" [] (home-page))
   (GET "/history" [] (get-history))
+  (GET "/download/:id" [id] (download-pdf id))
   (POST "/upload" request (handle-upload request))
   (route/resources "/")  ; Serve static resources
   (route/not-found "Not Found"))

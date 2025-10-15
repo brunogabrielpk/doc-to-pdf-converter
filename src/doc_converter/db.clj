@@ -22,6 +22,7 @@
                         filename TEXT NOT NULL,
                         original_extension TEXT NOT NULL,
                         file_size INTEGER,
+                        pdf_path TEXT,
                         converted_at TEXT NOT NULL
                       )"]))
 
@@ -33,19 +34,38 @@
   (.format date-time DateTimeFormatter/ISO_LOCAL_DATE_TIME))
 
 (defn cleanup-old-conversions!
-  "Keeps only the last 5 conversions in the database"
+  "Keeps only the last 5 conversions in the database and deletes old PDF files"
   []
   (when @db-spec
     (try
       (with-open [conn (jdbc/get-connection @db-spec)]
-        ;; Delete all but the 5 most recent conversions
-        (jdbc/execute! conn
-                       ["DELETE FROM conversions
-                         WHERE id NOT IN (
-                           SELECT id FROM conversions
-                           ORDER BY id DESC
-                           LIMIT 5
-                         )"]))
+        ;; Get PDF paths of conversions that will be deleted
+        (let [old-conversions (jdbc/execute! conn
+                                             ["SELECT pdf_path FROM conversions
+                                               WHERE id NOT IN (
+                                                 SELECT id FROM conversions
+                                                 ORDER BY id DESC
+                                                 LIMIT 5
+                                               )"])]
+          ;; Delete the old PDF files
+          (doseq [{:conversions/keys [pdf_path]} old-conversions]
+            (when pdf_path
+              (try
+                (let [file (clojure.java.io/file pdf_path)]
+                  (when (.exists file)
+                    (.delete file)
+                    (println (format "Deleted old PDF: %s" pdf_path))))
+                (catch Exception e
+                  (println (format "Error deleting PDF file %s: %s" pdf_path (.getMessage e)))))))
+
+          ;; Delete database records
+          (jdbc/execute! conn
+                         ["DELETE FROM conversions
+                           WHERE id NOT IN (
+                             SELECT id FROM conversions
+                             ORDER BY id DESC
+                             LIMIT 5
+                           )"])))
       (catch Exception e
         (println "Error cleaning up old conversions:" (.getMessage e))))))
 
@@ -55,8 +75,9 @@
    Parameters:
    - filename: Original filename
    - extension: File extension (e.g., '.doc', '.jpg')
-   - file-size: Size of the file in bytes (optional)"
-  [filename extension file-size]
+   - file-size: Size of the file in bytes (optional)
+   - pdf-path: Path to the stored PDF file (optional)"
+  [filename extension file-size pdf-path]
   (when @db-spec
     (try
       (let [timestamp (format-timestamp (LocalDateTime/now))]
@@ -64,8 +85,9 @@
                      {:filename filename
                       :original_extension extension
                       :file_size (or file-size 0)
+                      :pdf_path pdf-path
                       :converted_at timestamp}))
-      (println (format "Recorded conversion: %s" filename))
+      (println (format "Recorded conversion: %s (PDF: %s)" filename pdf-path))
 
       ;; Keep only the last 5 conversions
       (cleanup-old-conversions!)
@@ -102,4 +124,20 @@
       (catch Exception e
         (println "Error getting conversion count:" (.getMessage e))
         0))))
-(ns doc-converter.db)
+
+(defn get-conversion-by-id
+  "Retrieves a specific conversion by ID.
+
+   Parameters:
+   - id: The conversion ID
+
+   Returns a map with conversion details or nil if not found"
+  [id]
+  (when @db-spec
+    (try
+      (with-open [conn (jdbc/get-connection @db-spec)]
+        (jdbc/execute-one! conn
+                           ["SELECT * FROM conversions WHERE id = ?" id]))
+      (catch Exception e
+        (println "Error retrieving conversion:" (.getMessage e))
+        nil))))
